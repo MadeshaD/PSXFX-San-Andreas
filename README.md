@@ -1,6 +1,6 @@
 # PSXFX San Andreas
 
-**PSXFX** is a plugin that recreates the signature look of the original PlayStation’s 3D graphics in GTA San Andreas. It changes how geometry, textures, color, and the interface are rendered while you play. The original models and textures remain untouched.
+**PSXFX** is a plugin that recreates the signature look of the original PlayStation’s 3D graphics in GTA San Andreas. It changes the way geometry, textures, colors, and interface are rendered during gameplay. The original models and textures remain untouched.
 
 ## Key features
 - **Internal resolution.** `RenderHeight` sets the height at which the 3D scene is rendered. You can keep the game’s display resolution and configure interface filtering and movement snapping separately.

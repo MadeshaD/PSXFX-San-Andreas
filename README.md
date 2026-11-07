@@ -1,21 +1,21 @@
-# PSXFX.SA 0.32
+# PSXFX San Andreas
 
-DisableWaterVertexSnap=1 отключает привязку вершин на воде. Чтобы вода использовала общие настройки VertexSnap, задайте 0 и нажмите F8.
+**PSXFX** is a plugin that recreates the signature look of the original PlayStation’s 3D graphics in GTA San Andreas. It changes how geometry, textures, color, and the interface are rendered while you play. The original models and textures remain untouched.
 
-Плагин подключается через вызов WinMain после загрузки активного профиля Mod Loader. Для Mod Loader поместите ASI и INI рядом в отдельную папку мода. Перезапустите игру после установки.
+## Key features
+- **Internal resolution.** `RenderHeight` sets the height at which the 3D scene is rendered. You can keep the game’s display resolution and configure interface filtering and movement snapping separately.
+- **Geometry and texture coordinates.** `VertexSnap` locks vertices to a virtual grid, creating the characteristic wobble along object edges. `Affine` recreates texture distortion as the viewing angle changes. You can also limit UV coordinate precision and enable affine interpolation of vertex colors.
+- **Support for in-game models.** Effects apply to supported world models, objects, vehicles, and characters, including CJ.
+- **Texture pixelation.** Choose between reduced texture copies stored in video memory and screen-space grid pixelation. Point filtering keeps pixel edges sharp. World sprites and visual effects have separate settings.
+- **Color and dithering.** Set color depth from 2 to 8 bits per channel, choose the PS1 or Bayer dithering matrix, and adjust pattern strength, saturation, and contrast.
+- **HUD, radar, and other interface elements.** `HUDPointFilter` disables smoothing when sprites are enlarged. UISnap aligns their coordinates to a grid, giving some interface elements a stepped movement.
+- **Fog, lighting, and world effects.** Adjust fog distance, ambient and directional light, pedestrian shadows, and vehicle brightness. You can also enable or disable stencil shadows, vehicle reflections and shine, heat haze, high-speed motion blur, and procedural grass.
 
-Закройте игру и замените PSXFX.SA.asi. В архиве рядом лежит PSXFX.SA.ini с настройками, сгруппированными по эффектам. Можно сохранить свой INI и добавить новые ключи в раздел [PSX]. Отсутствующие новые ключи используют значения по умолчанию.
+## Controls
+By default, F7 toggles the effects, and F8 reloads the INI while the game is running.
 
-F7 переключает эффекты, F8 перечитывает INI. ToggleKey=118 и ReloadKey=119 принимают десятичные коды клавиш Windows. Назначайте разные клавиши. Постоянный режим геометрии выбирается через Mode.
+## Compatibility
+The plugin is incompatible with SkyGfx. If you have the latest version of WidescreenFix installed, disable SMAA in its INI by setting `SMAA = 0`.
 
-SeamFill использует геометрию статических непрозрачных моделей. Поиск получает прежние 32000 проверок на кадр. Перед отправкой вставки на отрисовку плагин проверяет границы кадра с запасом под смещение VertexSnap. Вода использует отдельный проход. SeamDebug=1 подсвечивает видимые вставки.
-
-FoggySFStart и FoggySFEnd задают начало и конец тумана в Сан-Фиерро при FOGGY_SF. SandstormStart и SandstormEnd действуют во время SANDSTORM_DESERT. Значения задаются в игровых единицах. Плагин смешивает диапазоны при переходе между погодами. Общие FogStart и FogEnd применяются к остальным типам погоды.
-
-HUDPointFilter, UISnap и UISnapVirtualHeight действуют с первого меню RenderWare после запуска игры. INI читается при загрузке ASI.
-
-UISnap действует на подходящие спрайты интерфейса Im2D, в том числе на карту и радар. Путь отрисовки обычных объектов через CommonAtomicRendering теперь включён постоянно. Штатное MSAA заблокировано с запуска. При визуальных артефактах с SMAA отключите SMAA в WidescreenFix.
-
-Logging=1 включает PSXFX.SA.log рядом с ASI. Чтобы записать причину отказа при запуске, установите этот параметр до запуска игры. По умолчанию Logging=0.
-
-Для сборки x86 используйте build_msvc.cmd или build_mingw.sh. Для запуска требуются ASI Loader с ранней загрузкой, одиночная игра и совместимый gta_sa.exe. Плагин проверяет сборку игры и сигнатуры в памяти перед установкой перехватов.
+## Note
+This plugin was made entirely with AI.

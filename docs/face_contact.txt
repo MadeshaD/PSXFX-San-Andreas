@@ -1,0 +1,2 @@
+PASS: production BVH matches brute force over 1001 triangles, visiting 21 nodes.
+PASS: continuous wall contact across two floor triangles, barycentric endpoints, reversed winding, boundary contact, coplanar/distant/degenerate rejection.

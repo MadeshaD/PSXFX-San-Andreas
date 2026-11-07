@@ -1,0 +1,1 @@
+PASS: 10000 identical shared-edge inserts eliminated; 10000 edge/face contacts, split edges and nonzero offsets retained. Synthetic fixture, not an FPS measurement.

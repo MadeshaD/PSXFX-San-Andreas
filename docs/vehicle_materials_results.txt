@@ -1,0 +1,2 @@
+PASS: production car material guard: only three env/spec bits cleared, exact restoration, shared-material deduplication,
+      nested scopes, opt-out, disabled-plugin and mesh-count gates. No game renderer execution.

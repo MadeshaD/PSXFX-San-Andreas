@@ -1,0 +1,86 @@
+[
+  {
+    "address": "0x5e675e",
+    "target": "0x49ea50",
+    "kind": "ped",
+    "bytes": "e8 ed 82 eb ff"
+  },
+  {
+    "address": "0x5e676d",
+    "target": "0x49ea50",
+    "kind": "ped",
+    "bytes": "e8 de 82 eb ff"
+  },
+  {
+    "address": "0x706bc4",
+    "target": "0x49ea50",
+    "kind": "ped",
+    "bytes": "e8 87 7e d9 ff"
+  },
+  {
+    "address": "0x706bd3",
+    "target": "0x49ea50",
+    "kind": "ped",
+    "bytes": "e8 78 7e d9 ff"
+  },
+  {
+    "address": "0x7113b8",
+    "target": "0x49ea50",
+    "kind": "stencil",
+    "bytes": "e8 93 d6 d8 ff"
+  },
+  {
+    "address": "0x711d95",
+    "target": "0x49ea50",
+    "kind": "stencil",
+    "bytes": "e8 b6 cc d8 ff"
+  },
+  {
+    "address": "0x70f9b8",
+    "target": "0x49ea50",
+    "kind": "stencil",
+    "bytes": "e8 93 f0 d8 ff"
+  },
+  {
+    "address": "0x705116",
+    "target": "0x701780",
+    "kind": "heat",
+    "bytes": "e8 65 c6 ff ff"
+  },
+  {
+    "address": "0x53e997",
+    "target": "0x7354e0",
+    "kind": "lighting",
+    "bytes": "e8 44 6b 1f 00"
+  },
+  {
+    "address": "0x53e103",
+    "target": "0x5dbae0",
+    "bytes": "e8 d8 d9 09 00",
+    "purpose": "Grass"
+  },
+  {
+    "address": "0x704e8a",
+    "target": "0x7030a0",
+    "bytes": "e8 11 e2 ff ff",
+    "purpose": "SpeedBlur"
+  },
+  {
+    "address": "0x5d9fe9",
+    "target": "0x7573e0",
+    "bytes": "e8 f2 d3 17 00",
+    "purpose": "RegisterCar"
+  },
+  {
+    "address": "0x53e004",
+    "target": "0x6ef650",
+    "bytes": "e8 47 16 1b 00",
+    "purpose": "Water"
+  },
+  {
+    "address": "0x53e142",
+    "target": "0x6ef650",
+    "bytes": "e8 09 15 1b 00",
+    "purpose": "Water"
+  }
+]

@@ -1,0 +1,1 @@
+PASS: shared atomic dispatch forwards arguments, scopes additional callbacks once, bypasses existing building/car wrappers.

@@ -1,0 +1,4 @@
+PASS: rejected SM3 -> VS2.x snap fallback, unchanged native PS/fog/constants, cached accept/reject, capability gate.
+PASS: production native geometry state/cache: adaptation selection, original VS/PS/constants/fog/filters restored,
+      failed constant upload rollback, cache references released, opt-out/custom-PS/HUD/effects/RT gates.
+NOT TESTED: real D3D9 CreateVertexShader, driver validation, GTA render passes.

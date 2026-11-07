@@ -1,0 +1,1 @@
+PASS: intra-mesh T, adjacent offset tiles, right-angle fold, separate floors, exactly-once resume with one comparison per frame.

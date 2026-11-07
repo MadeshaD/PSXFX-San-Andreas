@@ -1,0 +1,4 @@
+PASS: 16200 native vertex executions (VS1.1/2.0/2.1, rigid/4-bone skinning, 32-bone palette, 3 snap types, snap 0/.5/1).
+PASS: original constants preserved, lighting RGBA, clip z/w, perspective/affine UV outputs, near/behind-camera bypass.
+PASS: 3600 VS2.x position-only executions; native color/UV/constants and original body preserved; <=256 slots.
+PASS: truncated/unsupported/random token streams rejected. NOT TESTED: actual game shader streams, D3D9 bytecode validation, GPU rendering.

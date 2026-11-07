@@ -1,0 +1,4 @@
+PASS production low-resolution lifecycle: allocation, small color/depth/viewport, camera rebinds,
+auxiliary target bypass, scissor scaling, composite boundary, nine injected setup failures,
+MSAA/disabled/zero-height bypass, active cleanup/reset and balanced references.
+NOT TESTED: real D3D9/RenderWare cache behavior, Windows driver, GTA visual results.

@@ -6,10 +6,20 @@ struct Face{V p[3];};
 struct Weight{float b,c;};
 struct FaceSpan{float t0,t1;Weight w0,w1;};
 // Clip an edge against a triangle in world space, preserving face barycentrics.
-inline bool faceContact(Line e,Face f,float tolerance,FaceSpan& out){
+inline bool faceContact(Line e,Face f,float tolerance,FaceSpan& out,bool adjacentModel=false,unsigned indexedEdges=0){
  V u=f.p[1]-f.p[0],v=f.p[2]-f.p[0],d=e.b-e.a,n=cross(u,v),en=cross(d,e.inside-e.a);
  float nn=dot(n,n),ee=dot(en,en),dd=dot(d,d),ne=dot(n,en);
- if(nn<1e-12f||ee<1e-12f||dd<.0001f||ne*ne>.8836f*nn*ee)return false;
+ if(nn<1e-12f||ee<1e-12f||dd<.0001f)return false;
+ bool shallow=ne*ne>.8836f*nn*ee;
+ if(shallow){
+  if(!adjacentModel)return false;
+  // Accept a bordering face on a shallow slope only when its interior
+  // extends to the other side. Reject broad overlays and coincident layers.
+  V side=cross(en,d);
+  side=side*(1.f/std::sqrt(dot(side,side)));
+  float a=dot(f.p[0]-e.a,side),b=dot(f.p[1]-e.a,side),c=dot(f.p[2]-e.a,side);
+  if(std::max({a,b,c})>tolerance || std::min({a,b,c})>=-tolerance)return false;
+ }
  if(std::abs(dot(n,d))>.06f*std::sqrt(nn*dd))return false;
  float uu=dot(u,u),vv=dot(v,v),uv=dot(u,v),det=uu*vv-uv*uv;
  if(det<=1e-12f)return false;
@@ -21,6 +31,21 @@ inline bool faceContact(Line e,Face f,float tolerance,FaceSpan& out){
  auto at=[&](float t){return Weight{a.b+(b.b-a.b)*t,a.c+(b.c-a.c)*t};};
  // Boundary contacts are also accepted: a smooth internal face edge has no
  // open-edge representative in the original matcher.
- out={lo,hi,at(lo),at(hi)};return true;
+ Weight start=at(lo),end=at(hi);
+ if(shallow && indexedEdges){
+  // A span exactly on an indexed border is already handled by edge-to-edge
+  // matching if that match covers the whole span.
+  float startWeight[]={1-start.b-start.c,start.b,start.c};
+  float endWeight[]={1-end.b-end.c,end.b,end.c};
+  for(int i=0;i<3;++i){
+   int opposite=(i+2)%3;
+   if(!(indexedEdges&(1u<<i)) || std::abs(startWeight[opposite])>1.e-6f ||
+      std::abs(endWeight[opposite])>1.e-6f)continue;
+   Span border;
+   if(overlap(e,{f.p[i],f.p[(i+1)%3],f.p[opposite]},border,tolerance) &&
+      border.a0<=lo && border.a1>=hi)return false;
+  }
+ }
+ out={lo,hi,start,end};return true;
 }
 }

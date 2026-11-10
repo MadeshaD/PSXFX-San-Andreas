@@ -19,6 +19,14 @@ int main(){
  verify(f,a);verify(g,b);
  Line far=wall;far.a.z=far.b.z=.1f;assert(!faceContact(far,f,.02f,a));
  Line flat=wall;flat.inside={0,1,0};assert(!faceContact(flat,f,.02f,a));
+ Face shoulder{{{0,.04f,0},{2,.04f,0},{0,-2,.03f}}};
+ assert(faceContact(flat,shoulder,.1f,a,true));
+ assert(!faceContact(flat,shoulder,.1f,a,false));
+ assert(!faceContact(flat,f,.02f,a,true)); // broad coplanar overlay
+ Line angled{{0,-.02f,0},{4,-.22f,0},{1,-2,0}};
+ Line road{{0,0,0},{4,0,0},{1,2,0}};
+ Span partial;assert(overlap(road,angled,partial,.1f));
+ assert(partial.a1>.35f && partial.a1<.45f);
  Face bad{{{0,0,0},{1,0,0},{2,0,0}}};assert(!faceContact(wall,bad,.02f,a));
  Face reversed{{f.p[2],f.p[1],f.p[0]}};assert(faceContact(wall,reversed,.02f,a));verify(reversed,a);
  Line boundary{{0,-1,0},{2,-1,0},{0,-1,1}};assert(faceContact(boundary,f,.02f,a));

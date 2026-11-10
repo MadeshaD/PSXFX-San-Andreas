@@ -8,9 +8,11 @@
 #include <tuple>
 #include <set>
 #include "seam_visibility.hpp"
+#include "seam_fog.hpp"
 #include "stitch_identity.hpp"
 namespace stitching {
 using stitch::V;
+static stitch::FogRadius fogRadius;
 struct Tri{uint16_t i[3],material;};
 struct UV{float u,v;};
 template<class T> T read(const BYTE*p,unsigned off){T x;memcpy(&x,p+off,sizeof(x));return x;}
@@ -23,21 +25,26 @@ struct Bounds{V lo{1e30f,1e30f,1e30f},hi{-1e30f,-1e30f,-1e30f};
 struct Endpoint{V pos,normal;UV uv;uint16_t index;};
 struct Edge{Endpoint a,b;stitch::Line world;const BYTE*mat;Bounds bounds;};
 struct Patch{unsigned neighbor,edge,other;stitch::Span span;bool face=false;stitch::Weight w0{},w1{};};
-struct Instance{unsigned id=0,seen=0,born=0,innerCount=0,outerCount=0; D3DMATRIX world{};Bounds bounds;std::vector<Edge> edges;FaceTree tree;std::vector<Patch> patches;std::set<unsigned> neighbors;std::map<const BYTE*,std::vector<unsigned>> materialPatches;std::map<const BYTE*,unsigned> renderedMaterials;};
+#include "contact_cache.hpp"
+struct Instance{Stamp stamp{};std::vector<float> prefixMax;unsigned id=0,seen=0,born=0,innerCount=0,outerCount=0; D3DMATRIX world{};Bounds bounds;std::vector<Edge> edges;FaceTree tree;std::vector<Patch> patches;std::set<unsigned> neighbors;std::map<const BYTE*,std::vector<unsigned>> materialPatches;std::map<const BYTE*,unsigned> renderedMaterials;};
 struct Scope{const BYTE* atomic;const BYTE* entry;};
 static Scope scope{};
 using Key=std::array<uint32_t,24>;
 static std::map<Key,Instance> instances;
 static std::map<unsigned,Instance*> byID;
-struct Work{unsigned owner,neighbor;stitch::PairCursor cursor;bool faces=false;};
+struct Work{unsigned owner,neighbor;stitch::PairCursor cursor;bool faces=false;std::vector<Patch> recorded{};};
 static std::deque<Work> pending;
 static void resumePairs();
 static unsigned nextID=0,builtThisFrame=0,totalEdges=0,totalFaces=0;
 static void addPatch(Instance&a,Patch p){if(p.neighbor!=a.id)a.neighbors.insert(p.neighbor);a.materialPatches[a.edges[p.edge].mat].push_back(unsigned(a.patches.size()));a.patches.push_back(p);}
 static IDirect3DVertexDeclaration9* declaration=nullptr;
-static void clear(){pending.clear();byID.clear();instances.clear();totalEdges=0;totalFaces=0;Release(declaration);}
+static void clearModels();
+static void clear(){clearModels();contacts.clear();pending.clear();byID.clear();instances.clear();totalEdges=0;totalFaces=0;Release(declaration);}
 static void beginFrame(){
  builtThisFrame=0;
+ V camera{};
+ if(distanceFog)memcpy(&camera,reinterpret_cast<const void*>(0xB76870),sizeof(camera)); // CRenderer::ms_vecCameraPosition
+ fogRadius.update(distanceFog,fogEnd,camera);
  bool evicted=false;
  for(auto i=instances.begin();i!=instances.end();){
   if(frame-i->second.seen>12){evicted=true;byID.erase(i->second.id);totalEdges-=unsigned(i->second.edges.size());totalFaces-=unsigned(i->second.tree.surfaces.size());i=instances.erase(i);}
@@ -81,39 +88,75 @@ static bool geometry(Geo& g){
  return g.pos&&g.tri&&g.uv&&g.mats;
 }
 static bool finite(V p){return std::isfinite(p.x)&&std::isfinite(p.y)&&std::isfinite(p.z);}
-static void boundaries(Instance& inst,const Geo& g){
+struct EdgeIndex{uint16_t a,b,c,material;};
+struct ModelTopology {std::vector<EdgeIndex> candidates;
+ std::vector<unsigned char> faceEdges;
+ size_t bytes()const{return candidates.capacity()*sizeof(EdgeIndex)+faceEdges.capacity();}
+ bool valid=false;};
+static std::map<Stamp,ModelTopology> models;
+static std::deque<Stamp> modelOrder;
+static size_t modelBytes=0;
+static void clearModels(){models.clear();modelOrder.clear();modelBytes=0;}
+static ModelTopology prepareTopology(const Geo& g){
+ ModelTopology result;
  // Canonicalize positions before counting edges, so a UV split inside one
  // model does not become an exterior edge.
  std::map<std::array<float,3>,unsigned> unique;
  std::vector<unsigned> canon(g.nv);
- for(int i=0;i<g.nv;++i){V p=g.pos[i];if(!finite(p))return;
+ for(int i=0;i<g.nv;++i){V p=g.pos[i];if(!finite(p))return result;
   canon[i]=unique.emplace(std::array<float,3>{p.x,p.y,p.z},unsigned(unique.size())).first->second;}
- struct Use{V normal{};bool crease=false;unsigned count=0;uint16_t a=0,b=0,c=0,material=0;};
+ struct Use{int face=0,corner=0;V normal{};bool crease=false;unsigned count=0;uint16_t a=0,b=0,c=0,material=0;};
  std::map<std::pair<unsigned,unsigned>,Use> counts;
  for(int i=0;i<g.nt;++i){const Tri&t=g.tri[i];
-  if(t.i[0]>=g.nv||t.i[1]>=g.nv||t.i[2]>=g.nv)return;
+  if(t.i[0]>=g.nv||t.i[1]>=g.nv||t.i[2]>=g.nv)return result;
   for(int j=0;j<3;++j){auto a=t.i[j],b=t.i[(j+1)%3];if(canon[a]==canon[b])continue;
    auto& u=counts[std::minmax(canon[a],canon[b])];
    V normal=stitch::cross(g.pos[b]-g.pos[a],g.pos[t.i[(j+2)%3]]-g.pos[a]);
    if(u.count==1){float d=stitch::dot(u.normal,normal);u.crease=d*d<.75f*stitch::dot(u.normal,u.normal)*stitch::dot(normal,normal);}
-   if(++u.count==1){u.normal=normal;u.a=a;u.b=b;u.c=t.i[(j+2)%3];u.material=t.material;}
+   if(++u.count==1){u.face=i;u.corner=j;u.normal=normal;u.a=a;u.b=b;u.c=t.i[(j+2)%3];u.material=t.material;}
   }
  }
+ if(g.nt<=8192)result.faceEdges.resize(g.nt);
+ for(const auto& item:counts){
+  const auto& u=item.second;
+  if((u.count!=1&&!(u.count==2&&u.crease))||u.material>=g.nm)continue;
+  if(!result.faceEdges.empty())result.faceEdges[u.face]|=1u<<u.corner;
+  result.candidates.push_back({u.a,u.b,u.c,u.material});
+  if(result.candidates.size()>4096){result.candidates.clear();std::fill(result.faceEdges.begin(),result.faceEdges.end(),0);break;}
+ }
+ result.valid=true;return result;
+}
+static void boundaries(Instance& inst,const Geo& g){
+ Stamp model{14695981039346656037ull,0x9e3779b97f4a7c15ull};
+ const uint32_t shape[]={unsigned(g.nv),unsigned(g.nt),unsigned(g.nm)};
+ fingerprint(model,shape,sizeof(shape));fingerprint(model,g.pos,sizeof(V)*g.nv);
+ fingerprint(model,g.tri,sizeof(Tri)*g.nt);
+ auto it=models.find(model);
+ if(it==models.end()){
+  auto topology=prepareTopology(g);
+  size_t need=topology.bytes();
+  while(!modelOrder.empty()&&(models.size()>=1024 || modelBytes+need>8*1024*1024)){
+   auto oldest=models.find(modelOrder.front());modelOrder.pop_front();
+   modelBytes-=oldest->second.bytes();models.erase(oldest);
+  }
+  modelBytes+=need;modelOrder.push_back(model);it=models.emplace(model,std::move(topology)).first;
+ }
+ inst.stamp=model;
+ if(!it->second.valid)return;
  if(g.nt<=8192&&totalFaces+unsigned(g.nt)<=160000){
   inst.tree.surfaces.reserve(g.nt);inst.tree.nodes.reserve(2*g.nt-1);
   for(int i=0;i<g.nt;++i){const Tri&t=g.tri[i];if(t.material>=g.nm)continue;
-   Surface f{};f.mat=g.mats[t.material];for(int j=0;j<3;++j){f.local.p[j]=g.pos[t.i[j]];f.world.p[j]=worldPoint(f.local.p[j],inst.world);inst.bounds.add(f.world.p[j]);}
+   Surface f{};f.edgeMask=it->second.faceEdges[i];f.mat=g.mats[t.material];for(int j=0;j<3;++j){f.local.p[j]=g.pos[t.i[j]];f.world.p[j]=worldPoint(f.local.p[j],inst.world);inst.bounds.add(f.world.p[j]);}
    inst.tree.surfaces.push_back(f);
   }
   if(!inst.tree.surfaces.empty())inst.tree.build(0,unsigned(inst.tree.surfaces.size()));
  }
  auto end=[&](uint16_t i){return Endpoint{g.pos[i],g.norm?g.norm[i]:V{},g.uv[i],i};};
- for(const auto& item:counts){const auto& u=item.second;
-  if((u.count!=1&&!(u.count==2&&u.crease))||u.material>=g.nm)continue;
+ for(const auto& u:it->second.candidates){
   stitch::Line l{worldPoint(g.pos[u.a],inst.world),worldPoint(g.pos[u.b],inst.world),worldPoint(g.pos[u.c],inst.world)};
   Bounds edgeBounds;edgeBounds.add(l.a);edgeBounds.add(l.b);
   inst.edges.push_back({end(u.a),end(u.b),l,g.mats[u.material],edgeBounds});inst.bounds.add(l.a);inst.bounds.add(l.b);
-  if(inst.edges.size()>4096){inst.edges.clear();return;}
+
  }
  std::sort(inst.edges.begin(),inst.edges.end(),[](const Edge&a,const Edge&b){
   return std::min(a.world.a.x,a.world.b.x)<std::min(b.world.a.x,b.world.b.x);});
@@ -131,33 +174,74 @@ static bool scanFaces(Instance&a,const Instance&b,stitch::PairCursor&c,unsigned&
   // separately transformed instances have identical floating-point clip positions.
   if(a.id==b.id&&stitch::sameFaceEdge(e.a.pos,e.b.pos,b.tree.surfaces[node.face].local)){continue;}
   stitch::FaceSpan span;
-  if(stitch::faceContact(e.world,b.tree.surfaces[node.face].world,seamTolerance,span)){
+  if(stitch::faceContact(e.world,b.tree.surfaces[node.face].world,seamTolerance,span,a.id!=b.id,b.tree.surfaces[node.face].edgeMask)){
    addPatch(a,{b.id,c.i,node.face,{span.t0,span.t1,0,0},true,span.w0,span.w1});++count;
   }
  }
  return true;
 }
 static void resumePairs(){
+ if(pending.empty())return;
+ seam_profile::Timer timer(seam_profile::search);
+ static std::vector<Work> deferred;
+ deferred.clear();
  unsigned remaining=32000;
  while(remaining&&!pending.empty()){
-  Work work=pending.front();pending.pop_front();
+  Work work=std::move(pending.front());pending.pop_front();
   auto first=byID.find(work.owner),second=byID.find(work.neighbor);
   if(first==byID.end()||second==byID.end())continue;
   Instance& a=*first->second;
   const Instance& b=*second->second;
+  if(fogRadius.squared>=0.f && fogRadius.outsideContact(a.bounds.lo,a.bounds.hi,b.bounds.lo,b.bounds.hi,seamTolerance)){
+   deferred.push_back(std::move(work));
+   continue;
+  }
   bool internal=a.id==b.id;
   unsigned& count=internal?a.innerCount:a.outerCount;
   if(count>=4096){continue;}
   unsigned slice=std::min({remaining,2048u,4096u-count});
   unsigned budget=slice;
+  ContactKey key{a.stamp,b.stamp,internal,work.faces};
+  if(!work.cursor.i&&!work.cursor.j){
+   if(const auto* baked=contacts.find(key)){
+    if(logging)++seam_profile::hits;
+    for(Patch patch:*baked){
+     if(count==4096)break;
+     patch.neighbor=b.id;addPatch(a,patch);++count;
+    }
+    remaining-=std::min(remaining,std::max(1u,unsigned(baked->size())));
+    continue;
+   }
+  }
+  size_t before=a.patches.size();
   bool finished=work.faces?scanFaces(a,b,work.cursor,budget,count):stitch::scan(work.cursor,a.edges,b.edges,a.id==b.id,seamTolerance,budget,
    [&](unsigned i,unsigned j,const stitch::Span& span){
     if(internal&&stitch::sameEdge(a.edges[i].a.pos,a.edges[i].b.pos,b.edges[j].a.pos,b.edges[j].b.pos)){return;}
     addPatch(a,{b.id,i,j,span});++count;
-   });
+   },&b.prefixMax);
+  if(before<a.patches.size())
+   work.recorded.insert(work.recorded.end(),a.patches.begin()+before,a.patches.end());
+  if(finished)contacts.save(key,std::move(work.recorded));
   remaining-=slice-budget;
-  if(!finished)pending.push_back(work);
+  if(!finished)pending.push_back(std::move(work));
  }
+ for(auto& work:deferred)pending.push_back(std::move(work));
+ deferred.clear();
+}
+// Project the local bounding sphere onto each world axis. This encloses
+// the full model under rotation, non-uniform scale and shear.
+static bool modelOutsideFog(const Geo& g,const D3DMATRIX& w){
+ if(fogRadius.squared<0.f)return false;
+ const BYTE* morph=read<const BYTE*>(g.ptr,0x5c);
+ V centre=worldPoint(read<V>(morph,4),w);
+ float radius=read<float>(morph,16);
+ if(!(radius>0.f) || !std::isfinite(radius) || !finite(centre))return false;
+ auto extent=[&](unsigned j){
+  float a=w.m[0][j],b=w.m[1][j],c=w.m[2][j];
+  return radius*std::sqrt(a*a+b*b+c*c)+seamTolerance;
+ };
+ V half{extent(0),extent(1),extent(2)};
+ return fogRadius.outside(centre-half,centre+half);
 }
 static Instance* lookup(const Geo& g,const D3DMATRIX&w){
  Key key{};key[0]=(DWORD)(uintptr_t)scope.atomic;key[1]=(DWORD)(uintptr_t)g.ptr;
@@ -165,8 +249,18 @@ static Instance* lookup(const Geo& g,const D3DMATRIX&w){
  key[4]=read<DWORD>(scope.entry,0x18);memcpy(key.data()+5,&w,64);key[21]=g.nv;key[22]=g.nt;key[23]=(DWORD)(uintptr_t)g.tri;
  auto i=instances.find(key);if(i!=instances.end()){i->second.seen=frame;return &i->second;}
  if(builtThisFrame>=6||instances.size()>=512||totalEdges>=65536)return nullptr;
+ seam_profile::Timer timer(seam_profile::build);
  ++builtThisFrame;
  auto& n=instances[key];n.id=++nextID;n.world=w;n.seen=n.born=frame;boundaries(n,g);
+ float farX=-INFINITY;
+ n.prefixMax.reserve(n.edges.size());
+ for(const Edge& e:n.edges){
+  farX=std::max(farX,e.bounds.hi.x);
+  n.prefixMax.push_back(farX);
+ }
+ const uint32_t shape[]={unsigned(g.nv),unsigned(g.nt),unsigned(g.nm),unsigned(n.tree.surfaces.size()),unsigned(n.edges.size())};
+ fingerprint(n.stamp,shape,sizeof(shape));fingerprint(n.stamp,&w,sizeof(w));
+
  totalEdges+=unsigned(n.edges.size());totalFaces+=unsigned(n.tree.surfaces.size());
  if(!n.edges.empty()){
   pending.push_back({n.id,n.id,{}});
@@ -195,36 +289,38 @@ static DWORD mixColor(const DWORD* colors,const Edge&e,float t){
  auto byte=[&](int k){float x=(a>>(8*k))&255,y=(b>>(8*k))&255;return DWORD(x+(y-x)*t+.5f);};
  return (byte(3)<<24)|(byte(0)<<16)|(byte(1)<<8)|byte(2);
 }
-// DrawPrimitiveUP clears stream zero. Save just the bindings changed by this draw.
+// DrawIndexedPrimitiveUP clears stream zero and the index binding. Save just the bindings changed by this draw.
 struct Bindings {
  IDirect3DDevice9* d; IDirect3DVertexShader9* vs=nullptr;
  IDirect3DVertexDeclaration9* decl=nullptr; IDirect3DVertexBuffer9* vb=nullptr;
+ IDirect3DIndexBuffer9* ib=nullptr;
  UINT offset=0,stride=0;DWORD fvf=0,cull=0;bool valid=false;
  explicit Bindings(IDirect3DDevice9*dev):d(dev){
   valid=SUCCEEDED(d->GetVertexShader(&vs))&&SUCCEEDED(d->GetVertexDeclaration(&decl))&&
         SUCCEEDED(d->GetFVF(&fvf))&&SUCCEEDED(d->GetStreamSource(0,&vb,&offset,&stride))&&
-        SUCCEEDED(d->GetRenderState(D3DRS_CULLMODE,&cull));
+        SUCCEEDED(d->GetIndices(&ib))&&SUCCEEDED(d->GetRenderState(D3DRS_CULLMODE,&cull));
  }
  ~Bindings(){
   if(valid){
-   d->SetStreamSource(0,vb,offset,stride);
+   d->SetStreamSource(0,vb,offset,stride);d->SetIndices(ib);
    if(fvf)d->SetFVF(fvf);else d->SetVertexDeclaration(decl);
    d->SetVertexShader(vs);d->SetRenderState(D3DRS_CULLMODE,cull);
   }
-  Release(vb);Release(decl);Release(vs);
+  Release(ib);Release(vb);Release(decl);Release(vs);
  }
 };
 static void draw(IDirect3DDevice9*d,const MeshDraw& mesh,const D3DMATRIX&w,const D3DMATRIX&view,const D3DMATRIX&proj,bool hasColor,bool hasNormal,float marginX,float marginY){
  if(!scope.atomic||!seamFill||!stitchVS||!mesh.known||snap<=0||(mode!=0&&mode!=1)||inEffects||carDepth)return;
+ Geo g{};if(!geometry(g)||modelOutsideFog(g,w))return;
  if(!RS(d,D3DRS_ZENABLE)||!RS(d,D3DRS_ZWRITEENABLE)||RS(d,D3DRS_ALPHABLENDENABLE)||RS(d,D3DRS_STENCILENABLE))return;
  auto mat=ScopedMaterial(mesh);if(!mat)return;
- Geo g{};if(!geometry(g)){return;}
  Instance*n=lookup(g,w);if(!n)return;
  n->renderedMaterials[mat]=frame;
  if(n->patches.empty()||n->born==frame)return;
  auto batch=n->materialPatches.find(mat);if(batch==n->materialPatches.end())return;
- // Retain capacity between calls. DrawPrimitiveUP consumes the data synchronously.
- static std::vector<Vertex> verts;verts.clear();verts.reserve(batch->second.size()*6);
+ seam_profile::Timer preparing(seam_profile::prepare);
+ // Retain capacity between calls. DrawIndexedPrimitiveUP consumes the data synchronously.
+ static std::vector<Vertex> verts;verts.clear();verts.reserve(batch->second.size()*4);
  
  unsigned previousID=0,previousEdge=~0u;
  const Instance* neighbor=nullptr;
@@ -233,6 +329,13 @@ static void draw(IDirect3DDevice9*d,const MeshDraw& mesh,const D3DMATRIX&w,const
  auto wvpA=Mul(Mul(w,view),proj);
  for(unsigned patchIndex:batch->second){const auto&p=n->patches[patchIndex];
   const Edge&e=n->edges[p.edge];if(e.mat!=mat)continue;
+  if(fogRadius.squared>=0.f){
+   V direction=e.world.b-e.world.a;
+   Bounds span;
+   span.add(e.world.a+direction*p.span.a0);
+   span.add(e.world.a+direction*p.span.a1);
+   if(fogRadius.outside(span.lo,span.hi))continue;
+  }
   if(previousID!=p.neighbor){
    auto it=byID.find(p.neighbor);
    neighbor=it==byID.end()?nullptr:it->second;
@@ -262,11 +365,12 @@ static void draw(IDirect3DDevice9*d,const MeshDraw& mesh,const D3DMATRIX&w,const
   c.a=f1.a=ba;c.b=f1.b=bb;c.c=f1.c=bc;
   c.t=p.face?p.w0.b:p.span.b0;c.u=p.face?p.w0.c:0;
   f1.t=p.face?p.w1.b:p.span.b1;f1.u=p.face?p.w1.c:0;
-  verts.insert(verts.end(),{a,b,c,c,b,f1});
+  verts.insert(verts.end(),{a,b,c,f1});
   
   
  }
  if(verts.empty()||!ensureDecl(d))return;
+ preparing.stop();seam_profile::Timer submitting(seam_profile::submit);
  Bindings state(d);if(!state.valid)return;
  if(FAILED(d->SetVertexDeclaration(declaration))||FAILED(d->SetVertexShader(stitchVS))||FAILED(d->SetRenderState(D3DRS_CULLMODE,D3DCULL_NONE)))return;
  float saved[4];
@@ -275,7 +379,14 @@ static void draw(IDirect3DDevice9*d,const MeshDraw& mesh,const D3DMATRIX&w,const
   float debug[4]={saved[0],saved[1],saved[2],-1};
   if(FAILED(d->SetPixelShaderConstantF(4,debug,1)))return;
  }
- originalUP(d,D3DPT_TRIANGLELIST,UINT(verts.size()/3),verts.data(),sizeof(Vertex));
+ // The per-instance cap is 8192 patches, so four vertices fit in 16-bit indices.
+ static std::vector<uint16_t> indices;
+ for(unsigned base=unsigned(indices.size()/6)*4;base<verts.size();base+=4){
+  uint16_t a=uint16_t(base),b=uint16_t(base+1),c=uint16_t(base+2),e=uint16_t(base+3);
+  indices.insert(indices.end(),{a,b,c,c,b,e});
+ }
+ originalIUP(d,D3DPT_TRIANGLELIST,0,UINT(verts.size()),UINT(verts.size()/2),
+             indices.data(),D3DFMT_INDEX16,verts.data(),sizeof(Vertex));
  if(seamDebug)d->SetPixelShaderConstantF(4,saved,1);
 }
 }

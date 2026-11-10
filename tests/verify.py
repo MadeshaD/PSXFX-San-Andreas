@@ -37,8 +37,10 @@ class PE:
    if not any(desc):return out
    out.append(self.string(desc[3]));p+=20
 exe=PE(sys.argv[1]);assert exe.machine==0x14c and exe.base==0x400000
-assert hashlib.sha256(exe.b).hexdigest() in ('a5112e9cbbb0d06f271399697abe2a4e76aa8ea94568f51dfea19117518d7521','a559aa772fd136379155efa71f00c47aad34bbfeae6196b0fe1047d0645cbd26')
+assert hashlib.sha256(exe.b).hexdigest() in ('8ebc7ff3dccb209adb331332e498d23de9c78ff70382f4012b1c8fd60307ab27','a5112e9cbbb0d06f271399697abe2a4e76aa8ea94568f51dfea19117518d7521','a559aa772fd136379155efa71f00c47aad34bbfeae6196b0fe1047d0645cbd26')
 for va,data in {
+ 0x619CF4:'e8 77 92 1d 00 83 c4 04 85 c0 74 24',
+ 0x757875:'ff d0 83 c4 10',
  0x619D2E:'e8 3d 91 1d 00 85 c0 74 e8',
  0x57D0EA:'e8 f1 b3 27 00',
  0x57D11A:'e8 c1 b3 27 00',

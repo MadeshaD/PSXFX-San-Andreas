@@ -25,3 +25,8 @@ g++ -std=c++17 -O2 -Wall -Wextra -Werror tests/test_stitch_identity.cpp -o "$tas
 cat docs/stitch_identity.txt
 g++ -std=c++17 -O2 -Wall -Wextra -Werror tests/test_seam_visibility.cpp -o "$task_build_dir/seam_visibility"
 "$task_build_dir/seam_visibility"
+
+for name in standalone_start modloader_start; do
+ g++ -std=c++17 -no-pie "tests/test_${name}.cpp" -o "$task_build_dir/$name"
+ "$task_build_dir/$name"
+done

@@ -80,6 +80,7 @@ bool ObjectDeclaration(IDirect3DDevice9*d,bool*skin=nullptr){if(skin)*skin=isSki
 float FloatState(DWORD v){float f;memcpy(&f,&v,4);return f;}
 void Log(const char*,...){}
 static IDirect3DVertexShader9*NativeReassemble(IDirect3DDevice9*,const std::vector<uint32_t>&){return nullptr;}
+static float SnapAmount(){return (mode==0||mode==1)?snap:0.f;}
 #include "../src/native_geometry.hpp"
 int main(){
  using namespace native_shader;IDirect3DVertexShader9 original;

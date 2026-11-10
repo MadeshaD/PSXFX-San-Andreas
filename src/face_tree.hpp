@@ -1,5 +1,5 @@
 // Included inside stitching, after Bounds. Immutable copied triangle BVH.
-struct Surface{stitch::Face local,world;const BYTE*mat;};
+struct Surface{stitch::Face local,world;const BYTE*mat;unsigned char edgeMask=0;};
 struct FaceNode{Bounds box;unsigned after,face;};
 struct FaceTree{
  std::vector<Surface> surfaces;std::vector<FaceNode> nodes;

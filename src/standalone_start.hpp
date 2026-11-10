@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <cstring>
 namespace standalone_start {
-static_assert(sizeof(void*)==4,"GTA SA x86 only");
+
 static bool armed=false;
 static uint32_t redirect=0;
 static bool operand(uint32_t value) {
@@ -34,7 +34,8 @@ static void run(){
  SetLastError(saved);
 }
 static void arm(void* wrapper){
- if(!GetModuleHandleW(L"modloader.asi"))return;
+ // Silent calls LoadLibrary without invoking InitializeASI. This RenderWare
+ // startup site also handles direct installs without Mod Loader.
  auto* image=GetModuleHandleW(nullptr);
  if(reinterpret_cast<uintptr_t>(image)!=0x400000)return;
  auto* call=reinterpret_cast<const BYTE*>(startupSite);

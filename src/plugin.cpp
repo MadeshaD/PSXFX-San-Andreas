@@ -111,7 +111,9 @@ static void Settings() {
  uvMinTexels=std::clamp(IniFloat(L"UVMinTexels",2.0f),0.f,16.f);
  disableWaterSnap=GetPrivateProfileIntW(L"PSX",L"DisableWaterVertexSnap",1,ini.c_str())!=0;
  seamDebug=GetPrivateProfileIntW(L"PSX",L"SeamDebug",0,ini.c_str())!=0;
+ float previousTolerance=seamTolerance;
  seamTolerance=std::clamp(IniFloat(L"SeamJoinTolerance",0.1f),.001f,.1f);
+ if(previousTolerance!=seamTolerance)stitching::clear();
  seamFill=GetPrivateProfileIntW(L"PSX",L"SeamFill",1,ini.c_str())!=0;
  uvSteps=std::clamp(IniFloat(L"UVPrecisionSteps",64.0f),0.f,4096.f);
  uvSteps=std::round(uvSteps);
@@ -167,7 +169,7 @@ static bool ExactExe() {
  if(hash)CryptDestroyHash(hash);
  if(p)CryptReleaseContext(p,0);
  CloseHandle(f);
- return ok&&(!strcmp(hex,"a5112e9cbbb0d06f271399697abe2a4e76aa8ea94568f51dfea19117518d7521")||!strcmp(hex,"a559aa772fd136379155efa71f00c47aad34bbfeae6196b0fe1047d0645cbd26"));
+ return ok&&(!strcmp(hex,"8ebc7ff3dccb209adb331332e498d23de9c78ff70382f4012b1c8fd60307ab27")||!strcmp(hex,"a5112e9cbbb0d06f271399697abe2a4e76aa8ea94568f51dfea19117518d7521")||!strcmp(hex,"a559aa772fd136379155efa71f00c47aad34bbfeae6196b0fe1047d0645cbd26"));
 }
 static bool Write(void* dst,const void* src,size_t size) {
  DWORD old;if(!VirtualProtect(dst,size,PAGE_EXECUTE_READWRITE,&old))return false;
@@ -309,6 +311,7 @@ static bool Prepare(IDirect3DDevice9*d,Saved&saved) {
  return true;
 }
 #include "effects.hpp"
+#include "seam_profile.hpp"
 #include "world_stitch.hpp"
 #include "low_resolution.hpp"
 #include "aa_compat.hpp"
@@ -398,7 +401,7 @@ static void Poll() {
  }
  toggleDown=toggle;
  reloadDown=reload;
- if(now-lastReport>10000){lastReport=now;if(Conflict()){failed=true;Log("ERROR: conflicting module detected");}}
+ if(now-lastReport>10000){lastReport=now;seam_profile::report();if(Conflict()){failed=true;Log("ERROR: conflicting module detected");}}
 }
 static void __cdecl Scene() {
  Poll();UpdateWeatherFog();frame++;if(seamFill&&enabled&&!failed)stitching::beginFrame();generatedThisFrame=0;TrimCache();
@@ -416,6 +419,7 @@ static void __cdecl BeforeHUD() {
  if(device&&enabled&&!failed&&postEnabled)PostProcess(device);
  ((void(__cdecl*)())0x53E230)();
 }
+#include "seam_owner.hpp"
 static void Building(RenderCB original,void* entry,void* object,unsigned char type,unsigned int flags){
  auto*d=*(IDirect3DDevice9**)0xC97C28;
  if(!failed&&d&&AttachDevice(d)){if(!buildingDepth)buildingThread=GetCurrentThreadId();buildingDepth++;
@@ -423,7 +427,7 @@ static void Building(RenderCB original,void* entry,void* object,unsigned char ty
   const auto prevStitch=stitching::scope;
   const bool buildingPipe=original==(RenderCB)0x5D6480||original==(RenderCB)0x5D77D0;
   const bool defaultPrelit=original==(RenderCB)0x756DF0&&(flags&8);
-  if(seamFill&&(buildingPipe||defaultPrelit))
+  if(seamFill && type==1 && (buildingPipe||defaultPrelit) && seam_owner::owns(static_cast<const BYTE*>(object)))
    buildingScope={(const BYTE*)entry,0};
   else buildingScope={};
   stitching::scope=seamFill&&buildingScope.entry&&type==1?stitching::Scope{(const BYTE*)object,(const BYTE*)entry}:stitching::Scope{};
@@ -440,7 +444,7 @@ extern "C" __declspec(dllexport) void InitializeASI(){
  startTick=GetTickCount64();
  wchar_t path[32768];GetModuleFileNameW(self,path,32768);folder=path;folder=folder.substr(0,folder.find_last_of(L"\\/")+1);ini=folder+L"PSXFX.SA.ini";logPath=folder+L"PSXFX.SA.log";
  logging=GetPrivateProfileIntW(L"PSX",L"Logging",0,ini.c_str())!=0;
- if(logging){FILE*f=_wfopen(logPath.c_str(),L"wb");if(f)fclose(f);Log("PSXFX.SA 0.32 / x86");}
+ if(logging){FILE*f=_wfopen(logPath.c_str(),L"wb");if(f)fclose(f);Log("PSXFX.SA 0.36 / x86");}
  if((uintptr_t)GetModuleHandleW(nullptr)!=0x400000||!ExactExe()){Log("REFUSED: unsupported EXE; no patches installed");return;}
  if(memcmp((void*)0x757875,commonAtomicSignature,5)){Log("REFUSED: common atomic call changed; no patches installed");return;}
  if(Conflict()){Log("REFUSED: SkyGfx or multiplayer module; disable it and restart");return;}
@@ -472,6 +476,7 @@ extern "C" __declspec(dllexport) void InitializeASI(){
  }
  BYTE commonCall[5]={0xe8};rel=(DWORD)(uintptr_t)&CommonAtomicBridge-(0x757875+5);memcpy(commonCall+1,&rel,4);
  if(!Write((void*)0x757875,commonCall,5)){failed=true;Log("ERROR: common atomic hook failed; effects disabled");return;}
+ if(!seam_owner::install())Log("SeamFill unavailable: CBuilding render slot changed");
  InstallEarlyUI();
  lowBoundary=InstallLowBoundary();
  if(!InstallMSAAHooks())Log("MSAA hooks unavailable");
@@ -479,6 +484,7 @@ extern "C" __declspec(dllexport) void InitializeASI(){
 }
 static constexpr uintptr_t startupSite=0x619CF4,originalStartTarget=0x7F2F70;
 static constexpr BYTE startupSignature[]={0xe8,0x77,0x92,0x1d,0x0,0x83,0xc4,0x4,0x85,0xc0,0x74,0x24};
+static_assert(sizeof(void*)==4,"GTA SA x86 only");
 #include "standalone_start.hpp"
 static int __cdecl StartFromGame(void* openParams){
  standalone_start::run();
@@ -490,7 +496,10 @@ BOOL WINAPI DllMain(HINSTANCE h,DWORD reason,void* reserved){
  if(reason==DLL_PROCESS_ATTACH){
   self=h;
   DisableThreadLibraryCalls(h);
-  if(!ml_start::arm())standalone_start::arm(reinterpret_cast<void*>(&StartFromGame));
+  ml_start::arm();
+  // Either entry point may already have passed when the host loads ASIs.
+  // Both wrappers forward the original call; initialization itself is once-only.
+  standalone_start::arm(reinterpret_cast<void*>(&StartFromGame));
  }else if(reason==DLL_PROCESS_DETACH && !reserved){
   ml_start::restore();
   standalone_start::restore();
